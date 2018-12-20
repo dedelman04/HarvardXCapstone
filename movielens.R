@@ -24,6 +24,10 @@ movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
                                            genres = as.character(genres))
 movielens <- left_join(ratings, movies, by = "movieId")
 
+movielens <- read.csv("movielens.csv")
+movies <- read.csv("movies.csv")
+ratings <- read.csv("ratings.csv")
+
 # Validation set will be 10% of MovieLens data
 set.seed(1)
 test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
