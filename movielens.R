@@ -24,9 +24,12 @@ movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
                                            genres = as.character(genres))
 movielens <- left_join(ratings, movies, by = "movieId")
 
+###Writing my own load scripts
 movielens <- read.csv("movielens.csv")
 movies <- read.csv("movies.csv")
 ratings <- read.csv("ratings.csv")
+###Writing my own load scripts
+
 
 # Validation set will be 10% of MovieLens data
 set.seed(1)
