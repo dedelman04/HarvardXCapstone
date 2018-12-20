@@ -25,9 +25,9 @@ movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
 movielens <- left_join(ratings, movies, by = "movieId")
 
 ###Writing my own load scripts
-movielens <- read.csv("movielens.csv")
-movies <- read.csv("movies.csv")
-ratings <- read.csv("ratings.csv")
+movielens <- read.csv("movielens.csv", stringsAsFactors = FALSE)
+movies <- read.csv("movies.csv", stringsAsFactors = FALSE)
+ratings <- read.csv("ratings.csv", stringsAsFactors = FALSE)
 ###Writing my own load scripts
 
 
