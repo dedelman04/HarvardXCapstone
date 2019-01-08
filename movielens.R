@@ -19,10 +19,13 @@ ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ra
 
 movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
 colnames(movies) <- c("movieId", "title", "genres")
-movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(movieId),
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
                                            title = as.character(title),
                                            genres = as.character(genres))
 movielens <- left_join(ratings, movies, by = "movieId")
+
+write.csv(movies, file="movies.csv", row.names=FALSE)
+write.csv(movielens, file="movielens.csv", row.names=FALSE)
 
 ###Writing my own load scripts
 movielens <- read.csv("movielens.csv", stringsAsFactors = FALSE)
