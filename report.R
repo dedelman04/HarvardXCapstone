@@ -3,10 +3,22 @@ if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
 
-edx_base <- edx
-validation_base <- validation
+#To reset if something messes up
+#edx_base <- edx
+#validation_base <- validation
 #edx <- edx_base
 #validation <- validation_base
+
+#Distro of ratings
+edx %>% ggplot(aes(x=rating))+geom_histogram(stat="count")
+
+#Distro of ratings with .5 ratings rounded down
+edx %>% mutate(gp_rating = floor(rating)) %>%
+  ggplot(aes(x=gp_rating))+geom_histogram(stat="count")+
+  xlab("rating")
+
+#Mean rating
+mu <- mean(edx$rating)
 
 ####
 #movie_yr, review_yr --> weighted "nostalgia" factor
@@ -63,6 +75,10 @@ edx %>% group_by(nostalgia_factor) %>% summarize(mean_rt = mean(rating)) %>%
 edx %>% ggplot(aes(x=rating))+geom_histogram(bins=5)+facet_wrap(~ nostalgia_factor, scales="free_y")
 
 ###Seperate genres
+g <- names(table(edx$genres))
+data.frame(g, length(g))
+g[which.max(length(g))]
+
 genres <- c("genre1", "genre2", "genre3", 
             "genre4", "genre5", "genre6",
             "genre7", "genre8")

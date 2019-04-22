@@ -51,7 +51,7 @@ edx <- rbind(edx, removed)
 
 # Learners will develop their algorithms on the edx set
 # For grading, learners will run algorithm on validation set to generate ratings
-validation <- validation %>% select(-rating)
+#validation <- validation %>% select(-rating)
 
 # Ratings will go into the CSV submission file below:
 write.csv(validation %>% select(userId, movieId) %>% mutate(rating = NA),

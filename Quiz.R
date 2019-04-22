@@ -48,3 +48,5 @@ edx %>% group_by(rating) %>% summarize(cnt = n()) %>%
 #Visually
 edx %>% group_by(rating) %>% summarize(cnt = n()) %>%
   ggplot(aes(x=rating, y=cnt))+geom_line()
+
+edx %>% ggplot(aes(x=rating))+geom_histogram(bins=10)
