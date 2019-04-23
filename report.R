@@ -284,5 +284,15 @@ find_genre_mean <- function(x) {
 gr <- sapply(all_genres, find_genre_mean)
 grd <- data.frame(genre=names(gr), bgen = gr, stringsAsFactors = FALSE)
 
+for (i in 1:8) {
+  g <- paste("genre", i, sep="")
 
+  validation <- validation %>%
+    left_join(gr, by=c(g, "genre")) %>% mutate(grx = pred + bgen)
+}
+
+validation <- validation %>%
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  mutate(pred = mu + bmov + buser)
 
