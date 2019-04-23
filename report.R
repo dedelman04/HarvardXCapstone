@@ -53,11 +53,40 @@ edx %>% group_by(nostalgia_idx) %>% summarize(mean_rt = mean(rating)) %>%
 #    geom_vline(xintercept = 60)+
 #    geom_vline(xintercept = 70)+
 
+p <- edx %>% group_by(movie_yr) %>% summarize(mean_rt = mean(rating)) %>%
+  ggplot(aes(x=movie_yr, y=mean_rt))+geom_line(color="red") #+scale_x_reverse()
+
 edx %>% group_by(movie_yr) %>% summarize(mean_rt = mean(rating)) %>%
-  ggplot(aes(x=movie_yr, y=mean_rt))+geom_line()+scale_x_reverse()
+  cor()
+
+review <- edx %>% group_by(review_yr) %>% summarize(mean_rt = mean(rating))
+
+p <- p + 
+  geom_line(data = edx %>% group_by(review_yr) %>% summarize(mean_rt = mean(rating)),
+            mapping = aes(x=review_yr, y=mean_rt),
+            color="blue") #+scale_x_reverse()
+
+p <- p +
+  geom_line(data = edx %>% group_by(nostalgia_idx) %>%
+              summarize(mean_rt = mean(rating)),
+            mapping = aes(x=2010-nostalgia_idx, y=mean_rt),
+            color = "black")
+
+p + legend()
 
 edx %>% group_by(review_yr) %>% summarize(mean_rt = mean(rating)) %>%
-  ggplot(aes(x=review_yr, y=mean_rt))+geom_line()+scale_x_reverse()
+  cor()
+
+edx %>% group_by(nostalgia_idx) %>% summarize(mean_rt = mean(rating)) %>% 
+  cor()
+
+edx %>% filter(nostalgia_idx <= 55) %>% 
+  group_by(nostalgia_idx) %>% summarize(mean_rt = mean(rating)) %>%
+  cor()
+
+edx %>% filter(nostalgia_idx > 55) %>% 
+  group_by(nostalgia_idx) %>% summarize(mean_rt = mean(rating)) %>%
+  cor()
 
 #Pareto chart
 nost <- edx %>% group_by(nostalgia_idx) %>% summarize(n=n()) %>% arrange(nostalgia_idx) %>% .$n
@@ -75,10 +104,12 @@ edx %>% group_by(nostalgia_factor) %>% summarize(mean_rt = mean(rating)) %>%
 edx %>% ggplot(aes(x=rating))+geom_histogram(bins=5)+facet_wrap(~ nostalgia_factor, scales="free_y")
 
 ###Seperate genres
+#Find the longest genre entry
 g <- names(table(edx$genres))
-data.frame(g, length(g))
-g[which.max(length(g))]
+g[which.max(str_length(g))]
 
+#Since the longest has 8, we will split into 8 columns
+#(NA will populate where there are not 8 genres)
 genres <- c("genre1", "genre2", "genre3", 
             "genre4", "genre5", "genre6",
             "genre7", "genre8")
@@ -124,3 +155,21 @@ lowvar_users <- edx %>% group_by(userId) %>%
 
 #validation %>% group_by(userId) %>% summarize(n=n()) %>% 
 #  anti_join(y = edx %>% group_by(userId) %>% summarize(n=n()), by="userId")
+
+## Modelling
+mu <- mean(edx$rating)
+
+sqrt(mean((mu - validation$rating)^2))
+
+movie <- edx %>% group_by(movieId) %>% summarize(bmov = mean(rating-mu))
+
+pred <- mu + validation %>% left_join(movie, by="movieId") %>% .$bmov
+
+sqrt(mean((pred - validation$rating)^2))
+
+user <- edx %>% group_by(userId) %>% summarize(buser = mean(rating-mu))
+
+pred <- validation %>% left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>% mutate(pred = mu + bmov + buser) %>% .$pred
+
+sqrt(mean((pred - validation$rating)^2))

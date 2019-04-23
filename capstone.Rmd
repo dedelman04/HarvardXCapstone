@@ -1,0 +1,151 @@
+---
+title: "Movie Recommender - HarvardX Capstone"
+author: "David Edelman"
+date: "4/22/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Movie Recommender
+# HarvardX Capstone Project
+```{r data prep, echo=FALSE, warning=FALSE}
+if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-project.org")
+if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
+if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
+if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                      col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+movielens <- left_join(ratings, movies, by = "movieId")
+
+set.seed(1)
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in validation set are also in edx set
+validation <- temp %>% 
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+# Add rows removed from validation set back into edx set
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+# Learners will develop their algorithms on the edx set
+# For grading, learners will run algorithm on validation set to generate ratings
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+
+```
+
+## Executive Summary
+People are always wanting to know if they should see a certain movie, whether it is new in the theaters, or an older movie available on other media. However, individual tastes widely vary when it comes to enjoyment of movies. Movie reviews and ratings often inform this decision, so by using a vast accumulation of movie reviews from individuals, we can create a algorithm to predict how a certain individual would rate the movie, and hence their level of enjoyment.
+
+We will take almost 10 million movie reviews from individuals that logged movie review on the site MovieLens (<http://movielens.org>), explore the data to see what insights we can glean from it, and using those insights construct a prediction algorithm. We will test the predictive power against a validation set of 1 million records by using the Root Mean Square Error (RMSE) metric.
+
+## Data Exploration and Wrangling
+The data set we are using is relatively simple. There are 5 predictors along with the "rating" dependant variable:
+
+* userId - an integer identifier for each unique user; the value has no inherent meaning
+* movieId - an integer identifier for each unique movie; the value has no inherent meaning
+* timestamp - represents the date and time of the rating by storing the number of seconds since 1 January 1970
+* title - the title of the movie, including the year of release
+* genre - a list of all of the genres that MovieLens.org ascribed to the individual movie, listed alphabetically, concatenated by the pipe character (|)
+* rating - the dependent variable; a set of numbers from 0.5 to 5, incrementing by 0.5
+
+### Ratings
+```{r, echo=FALSE, warning=FALSE}
+edx %>% ggplot(aes(x=rating))+geom_histogram(stat="count")
+```
+
+A distribution of the number of reviews per rating shows that most ratings are 4 stars, followed by 3 stars. The "1/2 star" ratings are uncommon, so for the purposes of looking at a distribution, we will round the 1/2 stars ratings down.
+
+```{r, echo=FALSE, warning=FALSE}
+edx %>% mutate(gp_rating = floor(rating)) %>%
+  ggplot(aes(x=gp_rating))+geom_histogram(stat="count")+
+  xlab("rating")
+
+```
+
+The distribution appears approximately normal with a negative skew. The mean rating *mu* is 3.51. Since the distribution is not continuous, median and standard deviation are not very meaningful.
+
+### Genres
+
+There are 797 unique combinations of genres in the dataset:
+
+```{r}
+dim(table(edx$genres))
+```
+
+We will split the pipe-concatenated genres into individual genres, but to do this we need to know what the largest concatenated string is.
+
+```{r}
+#Find the longest genre entry
+g <- names(table(edx$genres))
+g[which.max(str_length(g))]
+```
+
+With a maximum of 8 genres concatenated together, we can now split the genre column into 8 separate columns, each with one genre ("NA" will be put in place for each missing column value). For ease of future exploration and wrangling, the genre columns will be converted into factors.
+
+```{r}
+#Since the longest has 8, we will split into 8 columns
+#(NA will populate where there are not 8 genres)
+genres <- c("genre1", "genre2", "genre3", 
+            "genre4", "genre5", "genre6",
+            "genre7", "genre8")
+
+edx <- edx %>% separate(genres, into=genres, 
+                        sep="[|]", fill="right", remove=FALSE, extra="merge")
+
+edx <- edx %>% mutate_at(genres, ~as.factor(.x))
+
+```
+
+### Dates
+#### Year of Review/Rating
+
+The year in which the user created the review may be of use for exploration and prediction. We can use the "timestamp" variable to extract a year. Since "timestamp" represents the number of seconds elapsed since 1 Jan 1970, we will convert to a date and extract the year.
+
+```{r}
+#Add review year
+edx <- edx %>% 
+  mutate(review_yr = year(as.Date(((edx$timestamp/60)/60)/24,
+                                  origin="1970-1-1")))
+
+```
+
+#### Date of Movie Release
+
+As with the year of the rating, the year the movie was released may have some exploratory or predictive value. The "title" variable contains the year, so we will need to extract it. Fortunately, the year of release is at the end of the title, enclosed in parenthesis. This allows for an easy extraction, although a regular expression technique could also be used. The year value starts at the 5th string element from the end. We then have to strip off the close parenthesis before it can be converted to a number. Since we still have the title in the data set, we do not need the title with the year stripped off.
+
+```{r}
+edx <- edx %>% separate(title, into=c("ttl", "movie_yr"), sep= -5, 
+                        remove=FALSE, fill="right", extra="merge")
+
+edx <- edx %>% mutate(movie_yr = as.numeric(sub(")", "", edx$movie_yr)))
+edx <- edx %>% select(-ttl)
+
+```
+
+Finally, we calculate a "nostalgia index", defined as the time between release of the movie and the individual review. The thinking is that older movies, even ones within the range of the review years, may be rated differently than more recent movies.
+
+```{r}
+#Calculate years between movie release and review; negative numbers are assumed #to be data errors and will be set to 0
+edx <- edx %>% mutate(nostalgia_idx = ifelse(review_yr < movie_yr, 
+                                             0,
+                                             review_yr - movie_yr))
+
+```
+
+#### Date Trends
