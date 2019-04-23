@@ -94,8 +94,11 @@ names(nost) <- distinct(data.frame(idx = edx$nostalgia_idx)) %>% arrange(idx) %>
 pareto.chart(nost, ylab="total ratings", cumperc=seq(0,100, by=5))
 
 #Group nostalgia indices into nostalgia factors
-facs <- c("0-10", "11-20", "21-30", "31-40", "41-50", "51-74", "75+")
-cut_levels <- c(-0.5, 10.5, 20.5, 30.5, 40.5, 50.5, 74.5, 100)
+#facs <- c("0-10", "11-20", "21-30", "31-40", "41-50", "51-74", "75+")
+#cut_levels <- c(-0.5, 10.5, 20.5, 30.5, 40.5, 50.5, 74.5, 100)
+facs <- c("0-20", "21-35", "36-60", "61+")
+cut_levels <- c(-0.5, 20.5, 35.5, 60.5, 100)
+
 edx <- edx %>% mutate(nostalgia_factor = cut(nostalgia_idx, cut_levels, labels=facs))
 
 edx %>% group_by(nostalgia_factor) %>% summarize(mean_rt = mean(rating)) %>% 
@@ -128,7 +131,9 @@ all_genres <- rbind(distinct(data.frame(genre = levels(edx$genre1))),
                     distinct(data.frame(genre = levels(edx$genre7))),
                     distinct(data.frame(genre = levels(edx$genre8))))
 
-all_genres <- distinct(all_genres)$genre
+all_genres <- as.character(distinct(all_genres)$genre)
+
+edx <- edx %>% mutate_at(genres, ~as.character(.x))
 
 edx %>% ggplot(aes(x=rating))+geom_histogram(bins=5)+facet_wrap(~genre1, scales="free_y")
 
@@ -156,20 +161,128 @@ lowvar_users <- edx %>% group_by(userId) %>%
 #validation %>% group_by(userId) %>% summarize(n=n()) %>% 
 #  anti_join(y = edx %>% group_by(userId) %>% summarize(n=n()), by="userId")
 
+
+###Do same data transformations to validation set
+#Review Year
+validation <- validation %>% 
+  mutate(review_yr = year(as.Date(((validation$timestamp/60)/60)/24, origin="1970-1-1")))
+
+#Movie Year
+validation <- validation %>% separate(title, into=c("ttl", "movie_yr"), sep= -5, 
+                        remove=FALSE, fill="right", extra="merge")
+
+validation <- validation %>% 
+  mutate(movie_yr = as.numeric(sub(")", "", validation$movie_yr))) %>% 
+  select(-ttl)
+
+#Nostalgia Index
+validation <- validation %>% 
+  mutate(nostalgia_idx = ifelse(review_yr < movie_yr, 0, review_yr - movie_yr))
+
+#Nostalgia factor
+validation <- validation %>% mutate(nostalgia_factor = cut(nostalgia_idx, cut_levels, labels=facs))
+
+#Genres
+validation <- validation %>% separate(genres, into=genres, 
+                        sep="[|]", fill="right", remove=FALSE, extra="merge")
+
+#validation <- validation %>% mutate_at(genres, ~as.factor(.x))
+#validation <- validation %>% mutate_at(genres, ~as.character(.x))
+
 ## Modelling
 mu <- mean(edx$rating)
 
-sqrt(mean((mu - validation$rating)^2))
+RMSE <- function(x) {sqrt(mean((x - validation$rating)^2))}
 
+RMSE(mu)
+
+#Movie bias
 movie <- edx %>% group_by(movieId) %>% summarize(bmov = mean(rating-mu))
 
 pred <- mu + validation %>% left_join(movie, by="movieId") %>% .$bmov
 
-sqrt(mean((pred - validation$rating)^2))
+RMSE(pred)
 
+#sqrt(mean((pred - validation$rating)^2))
+
+#User bias
 user <- edx %>% group_by(userId) %>% summarize(buser = mean(rating-mu))
 
 pred <- validation %>% left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>% mutate(pred = mu + bmov + buser) %>% .$pred
 
-sqrt(mean((pred - validation$rating)^2))
+RMSE(pred)
+
+#sqrt(mean((pred - validation$rating)^2))
+
+#Movie Year bias
+myear <- edx %>% group_by(movie_yr) %>% summarize(bmyear = mean(rating-mu))
+
+pred <- validation %>% 
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  left_join(myear, by = "movie_yr") %>%
+  mutate(pred = mu + bmov + buser + bmyear) %>% .$pred
+
+RMSE(pred)
+
+#Review Year bias
+ryear <- edx %>% group_by(review_yr) %>% summarize(bryear = mean(rating-mu))
+
+pred <- validation %>% 
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  left_join(ryear, by = "review_yr") %>%
+  mutate(pred = mu + bmov + buser + bryear) %>% .$pred
+
+RMSE(pred)
+
+#Nostalgia index bias
+nidx <- edx %>% group_by(nostalgia_idx) %>% summarize(bnost = mean(rating-mu))
+
+pred <- validation %>% 
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  left_join(nidx, by = "nostalgia_idx") %>%
+  mutate(pred = mu + bmov + buser + bnost) %>% .$pred
+
+RMSE(pred)
+
+#all three??
+pred <- validation %>% 
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  left_join(myear, by = "movie_yr") %>%
+  left_join(ryear, by = "review_yr") %>%
+  left_join(nidx, by = "nostalgia_idx") %>%
+  mutate(pred = mu + bmov + buser + bmyear + bryear + bnost) %>% .$pred
+
+RMSE(pred)
+
+#Nostalgia factor
+nfac <- edx %>% group_by(nostalgia_factor) %>% summarize(bnfac = mean(rating-mu))
+
+pred <- validation %>% 
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  left_join(nfac, by = "nostalgia_factor") %>%
+  mutate(pred = mu + bmov + buser + bnfac) %>% .$pred
+
+RMSE(pred)
+
+#####Time effects make things worse!!#####
+
+##Genres
+find_genre_mean <- function(x) {
+  tmp <- edx %>% mutate( gr = ifelse (genre1 == x | genre2 == x |
+                             genre3 == x | genre4 == x |
+                             genre5 == x | genre6 == x |
+                             genre7 == x | genre8 == x, x, NA) )
+  tmp %>% filter(! is.na(gr)) %>% group_by(gr) %>% summarize(bgen = mean(rating-mu)) %>% .$bgen
+}
+
+gr <- sapply(all_genres, find_genre_mean)
+grd <- data.frame(genre=names(gr), bgen = gr, stringsAsFactors = FALSE)
+
+
+
