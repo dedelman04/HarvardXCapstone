@@ -284,15 +284,78 @@ find_genre_mean <- function(x) {
 gr <- sapply(all_genres, find_genre_mean)
 grd <- data.frame(genre=names(gr), bgen = gr, stringsAsFactors = FALSE)
 
-for (i in 1:8) {
-  g <- paste("genre", i, sep="")
-
-  validation <- validation %>%
-    left_join(gr, by=c(g, "genre")) %>% mutate(grx = pred + bgen)
-}
+#validation <- validation %>% select(-c(bgen.x, bgen.y, bgen))
 
 validation <- validation %>%
+  left_join(grd, by=c("genre1" = "genre")) %>%
+  mutate(bgen1 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(grd, by=c("genre2" = "genre")) %>%
+  mutate(bgen2 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(grd, by=c("genre3" = "genre")) %>%
+  mutate(bgen3 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(grd, by=c("genre4" = "genre")) %>%
+  mutate(bgen4 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(grd, by=c("genre5" = "genre")) %>%
+  mutate(bgen5 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(grd, by=c("genre6" = "genre")) %>%
+  mutate(bgen6 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(grd, by=c("genre7" = "genre")) %>%
+  mutate(bgen7 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(grd, by=c("genre8" = "genre")) %>%
+  mutate(bgen8 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>% 
+  mutate(total_bgen = ifelse(is.na(bgen1),0,bgen1)+
+           ifelse(is.na(bgen2),0,bgen2)+
+           ifelse(is.na(bgen3),0,bgen3)+
+           ifelse(is.na(bgen4),0,bgen4)+
+           ifelse(is.na(bgen5),0,bgen5)+
+           ifelse(is.na(bgen6),0,bgen6)+
+           ifelse(is.na(bgen7),0,bgen7)+
+           ifelse(is.na(bgen8),0,bgen8))
+
+pred <- validation %>%
   left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>%
-  mutate(pred = mu + bmov + buser)
+  mutate(pred = mu + bmov + buser+total_bgen) %>% .$pred
 
+RMSE(pred)
+
+mean_genre <- validation %>% select(movieId, userId,
+                      bgen1, bgen2, bgen3, bgen4,
+                      bgen5, bgen6, bgen7, bgen8) %>%
+  gather(key=effect, value=genre_effect, -c(movieId, userId))
+
+mean_genre <- mean_genre %>%
+  group_by(movieId, userId) %>% summarize(mean_bgen = mean(genre_effect, na.rm=TRUE))
+
+pred <- validation %>%
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  left_join(mean_genre, by=c("movieId", "userId")) %>%
+  mutate(pred = ifelse(mu + bmov + buser + mean_bgen > 5, 5,
+                       mu + bmov + buser + mean_bgen)) %>% .$pred
+
+RMSE(pred)
