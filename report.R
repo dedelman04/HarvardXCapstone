@@ -209,7 +209,8 @@ RMSE(pred)
 user <- edx %>% group_by(userId) %>% summarize(buser = mean(rating-mu))
 
 pred <- validation %>% left_join(movie, by="movieId") %>%
-  left_join(user, by="userId") %>% mutate(pred = mu + bmov + buser) %>% .$pred
+  left_join(user, by="userId") %>% mutate(pred = ifelse(mu + bmov + buser > 5, 5,
+                                                        mu + bmov + buser)) %>% .$pred
 
 RMSE(pred)
 
@@ -222,7 +223,8 @@ pred <- validation %>%
   left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>%
   left_join(myear, by = "movie_yr") %>%
-  mutate(pred = mu + bmov + buser + bmyear) %>% .$pred
+  mutate(pred = ifelse(mu + bmov + buser + bmyear > 5, 5,
+                       mu + bmov + buser + bmyear)) %>% .$pred
 
 RMSE(pred)
 
@@ -233,7 +235,8 @@ pred <- validation %>%
   left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>%
   left_join(ryear, by = "review_yr") %>%
-  mutate(pred = mu + bmov + buser + bryear) %>% .$pred
+  mutate(pred = ifelse(mu + bmov + buser + bryear > 5, 5,
+                       mu + bmov + buser + bryear)) %>% .$pred
 
 RMSE(pred)
 
@@ -244,7 +247,8 @@ pred <- validation %>%
   left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>%
   left_join(nidx, by = "nostalgia_idx") %>%
-  mutate(pred = mu + bmov + buser + bnost) %>% .$pred
+  mutate(pred = ifelse(mu + bmov + buser + bnost > 5, 5,
+                       mu + bmov + buser + bnost)) %>% .$pred
 
 RMSE(pred)
 
@@ -255,7 +259,8 @@ pred <- validation %>%
   left_join(myear, by = "movie_yr") %>%
   left_join(ryear, by = "review_yr") %>%
   left_join(nidx, by = "nostalgia_idx") %>%
-  mutate(pred = mu + bmov + buser + bmyear + bryear + bnost) %>% .$pred
+  mutate(pred = ifelse(mu + bmov + buser + bmyear + bryear + bnost > 5, 5,
+                       mu + bmov + buser + bmyear + bryear + bnost)) %>% .$pred
 
 RMSE(pred)
 
@@ -266,7 +271,8 @@ pred <- validation %>%
   left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>%
   left_join(nfac, by = "nostalgia_factor") %>%
-  mutate(pred = mu + bmov + buser + bnfac) %>% .$pred
+  mutate(pred = ifelse(mu + bmov + buser + bnfac > 5, 5,
+                       mu + bmov + buser + bnfac)) %>% .$pred
 
 RMSE(pred)
 
@@ -339,7 +345,8 @@ validation <- validation %>%
 pred <- validation %>%
   left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>%
-  mutate(pred = mu + bmov + buser+total_bgen) %>% .$pred
+  mutate(pred = ifelse(mu + bmov + buser+total_bgen > 5, 5,
+                       mu + bmov + buser+total_bgen)) %>% .$pred
 
 RMSE(pred)
 
@@ -357,5 +364,112 @@ pred <- validation %>%
   left_join(mean_genre, by=c("movieId", "userId")) %>%
   mutate(pred = ifelse(mu + bmov + buser + mean_bgen > 5, 5,
                        mu + bmov + buser + mean_bgen)) %>% .$pred
+
+RMSE(pred)
+
+###User+genre effect
+gu <- rbind(edx %>% select(userId, genre1, rating) %>%
+              mutate(genre = genre1) %>% select(-genre1),
+            edx %>% filter(! is.na(genre2)) %>% 
+              select(userId, genre2, rating) %>% mutate(genre = genre2) %>% select(-genre2),
+            edx %>% filter(! is.na(genre3)) %>% 
+              select(userId, genre3, rating) %>% mutate(genre = genre3) %>% select(-genre3),
+            edx %>% filter(! is.na(genre4)) %>% 
+              select(userId, genre4, rating) %>% mutate(genre = genre4) %>% select(-genre4),
+            edx %>% filter(! is.na(genre5)) %>% 
+              select(userId, genre5, rating) %>% mutate(genre = genre5) %>% select(-genre5),
+            edx %>% filter(! is.na(genre6)) %>% 
+              select(userId, genre6, rating) %>% mutate(genre = genre6) %>% select(-genre6),
+            edx %>% filter(! is.na(genre7)) %>% 
+              select(userId, genre7, rating) %>% mutate(genre = genre7) %>% select(-genre7),
+            edx %>% filter(! is.na(genre8)) %>% 
+              select(userId, genre8, rating) %>% mutate(genre = genre8) %>% select(-genre8)
+)
+
+gu <- gu %>% group_by(userId, genre) %>% summarize(mean_rt = mean(rating-mu))
+
+gu %>% ggplot(aes(x=userId, y=mean_rt))+geom_point()+
+  geom_hline(aes(yintercept = bgen+mu), data=grd, color = "red")+facet_wrap(~genre)
+
+gu %>% ggplot(aes(x=mean_rt))+geom_histogram(binwidth=0.1)+
+  geom_vline(aes(xintercept = bgen+mu), data=grd, color = "red")+facet_wrap(~genre, scales="free_y")
+
+
+user %>% ggplot(aes(x=userId, y=buser+mu))+geom_point()+
+  geom_hline(aes(yintercept = mu), color = "red")
+
+user %>% ggplot(aes(x=buser+mu))+geom_histogram(binwidth=0.1)
+
+validation <- validation %>%
+  left_join(gu, by=c("userId", "genre1" = "genre")) %>%
+  mutate(bgu1 = mean_rt) %>% 
+  select(-mean_rt)
+
+validation <- validation %>%
+  left_join(gu, by=c("userId", "genre2" = "genre")) %>%
+  mutate(bgu2 = mean_rt) %>% 
+  select(-mean_rt)
+
+validation <- validation %>%
+  left_join(gu, by=c("userId", "genre3" = "genre")) %>%
+  mutate(bgu3 = mean_rt) %>% 
+  select(-mean_rt)
+
+validation <- validation %>%
+  left_join(gu, by=c("userId", "genre4" = "genre")) %>%
+  mutate(bgu4 = mean_rt) %>% 
+  select(-mean_rt)
+
+validation <- validation %>%
+  left_join(gu, by=c("userId", "genre5" = "genre")) %>%
+  mutate(bgu5 = mean_rt) %>% 
+  select(-mean_rt)
+
+validation <- validation %>%
+  left_join(gu, by=c("userId", "genre6" = "genre")) %>%
+  mutate(bgu6 = mean_rt) %>% 
+  select(-mean_rt)
+
+validation <- validation %>%
+  left_join(gu, by=c("userId", "genre7" = "genre")) %>%
+  mutate(bgu7 = mean_rt) %>% 
+  select(-mean_rt)
+
+validation <- validation %>%
+  left_join(gu, by=c("userId", "genre8" = "genre")) %>%
+  mutate(bgu8 = mean_rt) %>% 
+  select(-mean_rt)
+
+validation <- validation %>% 
+  mutate(total_bgu = ifelse(is.na(bgu1),0,bgu1)+
+           ifelse(is.na(bgu2),0,bgu2)+
+           ifelse(is.na(bgu3),0,bgu3)+
+           ifelse(is.na(bgu4),0,bgu4)+
+           ifelse(is.na(bgu5),0,bgu5)+
+           ifelse(is.na(bgu6),0,bgu6)+
+           ifelse(is.na(bgu7),0,bgu7)+
+           ifelse(is.na(bgu8),0,bgu8))
+
+pred <- validation %>% 
+  left_join(movie, by="movieId") %>%
+  mutate(pred = ifelse(mu+bmov+total_bgu > 5, 5,
+                       mu+bmov+total_bgu)) %>% .$pred
+
+RMSE(pred)
+
+mean_gu <- validation %>% select(movieId, userId,
+                                    bgu1, bgu2, bgu3, bgu4,
+                                    bgu5, bgu6, bgu7, bgu8) %>%
+  gather(key=effect, value=gu_effect, -c(movieId, userId))
+
+mean_gu <- mean_gu %>%
+  group_by(movieId, userId) %>% 
+  summarize(mean_bgu = ifelse(is.na(mean(gu_effect, na.rm = TRUE)), 0, mean(gu_effect, na.rm=TRUE)))
+
+pred <- validation %>%
+  left_join(movie, by="movieId") %>%
+  left_join(mean_gu, by=c("movieId", "userId")) %>%
+  mutate(pred = ifelse(mu + bmov + mean_bgu > 5, 5,
+                       mu + bmov + mean_bgu)) %>% .$pred
 
 RMSE(pred)
