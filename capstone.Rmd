@@ -95,7 +95,7 @@ g <- names(table(edx$genres))
 g[which.max(str_length(g))]
 ```
 
-With a maximum of 8 genres concatenated together, we can now split the genre column into 8 separate columns, each with one genre ("NA" will be put in place for each missing column value). For ease of future exploration and wrangling, the genre columns will be converted into factors.
+With a maximum of 8 genres concatenated together, we can now split the genre column into 8 separate columns, each with one genre ("NA" will be put in place for each missing column value). 
 
 ```{r}
 #Since the longest has 8, we will split into 8 columns
@@ -106,10 +106,33 @@ genres <- c("genre1", "genre2", "genre3",
 
 edx <- edx %>% separate(genres, into=genres, 
                         sep="[|]", fill="right", remove=FALSE, extra="merge")
-
+```
+```{r, echo=FALSE}
 edx <- edx %>% mutate_at(genres, ~as.factor(.x))
 
+#Get a single vector of all of the individual genre names
+all_genres <- rbind(distinct(data.frame(genre = levels(edx$genre1))),
+                    distinct(data.frame(genre = levels(edx$genre2))),
+                    distinct(data.frame(genre = levels(edx$genre3))),
+                    distinct(data.frame(genre = levels(edx$genre4))),
+                    distinct(data.frame(genre = levels(edx$genre5))),
+                    distinct(data.frame(genre = levels(edx$genre6))),
+                    distinct(data.frame(genre = levels(edx$genre7))),
+                    distinct(data.frame(genre = levels(edx$genre8))))
+
+all_genres <- as.character(distinct(all_genres)$genre)
+
+edx <- edx %>% mutate_at(genres, ~as.character(.x))
 ```
+
+To get an idea of ratings distribution across the genres, we plot histograms for each of the values in genre1 (rounding the 1/2 star ratings down):
+
+```{r, warning=FALSE}
+edx %>% mutate(gp_rating = floor(rating)) %>%
+  ggplot(aes(x=gp_rating))+geom_histogram(stat="count")+facet_wrap(~genre1, scales="free_y")
+```
+
+Just about all of the genres show a distribution heavily skewed towards the 3, 3.5, 4, and 4.5, so we may not see much benefit to this feature by itself in the prediction algorithm. However, there may be ways to use it in combination with other features.
 
 ### Dates
 #### Year of Review/Rating
@@ -122,7 +145,18 @@ edx <- edx %>%
   mutate(review_yr = year(as.Date(((edx$timestamp/60)/60)/24,
                                   origin="1970-1-1")))
 
+table(edx$review_yr) %>% as.data.frame() %>% arrange(desc(Freq))
 ```
+
+As we see, all years have more than 100,000 ratings exccept for the first and last years of the range. Now lets look at the mean rating for each review year that is not 1995 or 2009. We plot as a line chart simply to make the trend more visible, and reverse the x-axis to show as the "age" of the review.
+
+```{r}
+edx %>% filter(review_yr != 1995 & review_yr != 2009) %>%
+  group_by(review_yr) %>% summarize(mean_rt = mean(rating)) %>%
+  ggplot(aes(x=review_yr, y=mean_rt))+geom_line()+scale_x_reverse()
+```
+
+As we see from the plot, the mean rating is between approximately 3.425 and 3.620. If there is a trend, it appears to be a slightly increasing mean as the ratings get older.
 
 #### Date of Movie Release
 
@@ -135,8 +169,21 @@ edx <- edx %>% separate(title, into=c("ttl", "movie_yr"), sep= -5,
 edx <- edx %>% mutate(movie_yr = as.numeric(sub(")", "", edx$movie_yr)))
 edx <- edx %>% select(-ttl)
 
+range(edx$movie_yr)
 ```
 
+We see that there are movies from as long ago as 1915, and as recent as 2008. Like the year of review, we will look at the mean rating per year of release, again with a "reversed" x-axis.
+
+```{r, message=FALSE, warning=FALSE}
+edx %>% 
+  group_by(movie_yr) %>% summarize(mean_rt = mean(rating)) %>%
+  ggplot(aes(x=movie_yr, y=mean_rt))+geom_line()+scale_x_reverse()+
+  geom_smooth(linetype = 2, se=FALSE)
+```
+
+There appears to be a kind of trend where newer movies are rated lower and the mean rating increases until it peaks around 1950 then falls off again. But since the actual line looks more like a seismograph readout, with the mean bouncing all over the place, calling the deviations "trends" may be over-simplifying things. 
+
+#### "Nostalgia" Index
 Finally, we calculate a "nostalgia index", defined as the time between release of the movie and the individual review. The thinking is that older movies, even ones within the range of the review years, may be rated differently than more recent movies.
 
 ```{r}
@@ -147,4 +194,40 @@ edx <- edx %>% mutate(nostalgia_idx = ifelse(review_yr < movie_yr,
 
 ```
 
-#### Date Trends
+Like movie year and review year, we are interested in the mean rating for a film with a given "nostalgia index"
+
+```{r}
+edx %>% group_by(nostalgia_idx) %>% summarize(mean_rt = mean(rating)) %>% 
+  ggplot(aes(x=nostalgia_idx, y=mean_rt))+geom_line()
+```
+
+The curve looks similar to the movie year, with less overall variation year to year. This may be a good candidate to represent the age of a movie in the prediction algorithm.
+
+
+```{r, echo=FALSE}
+###Do same data transformations to validation set
+#Review Year
+validation <- validation %>% 
+  mutate(review_yr = year(as.Date(((validation$timestamp/60)/60)/24, origin="1970-1-1")))
+
+#Movie Year
+validation <- validation %>% separate(title, into=c("ttl", "movie_yr"), sep= -5, 
+                        remove=FALSE, fill="right", extra="merge")
+
+validation <- validation %>% 
+  mutate(movie_yr = as.numeric(sub(")", "", validation$movie_yr))) %>% 
+  select(-ttl)
+
+#Nostalgia Index
+validation <- validation %>% 
+  mutate(nostalgia_idx = ifelse(review_yr < movie_yr, 0, review_yr - movie_yr))
+
+#Nostalgia factor
+validation <- validation %>% mutate(nostalgia_factor = cut(nostalgia_idx, cut_levels, labels=facs))
+
+#Genres
+validation <- validation %>% separate(genres, into=genres, 
+                        sep="[|]", fill="right", remove=FALSE, extra="merge")
+
+```
+
