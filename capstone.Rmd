@@ -203,6 +203,30 @@ edx %>% group_by(nostalgia_idx) %>% summarize(mean_rt = mean(rating)) %>%
 
 The curve looks similar to the movie year, with less overall variation year to year. This may be a good candidate to represent the age of a movie in the prediction algorithm.
 
+### User and Genre
+We have split the single "genres" column into its constituent genres (genre1 thru genre8), and looked at a sample distribution, but we should explore further and look at the mean rating per genre, for every movie that is assigned to that genre. Because the genres are listed alphabetically, and not in some order indicating that a movie is more, for example, "Comedy" than it is "Horror", we need to comb through all of the movies and find which have been assigned to each genre. We previously stored the list of genres in all_genres:
+
+```{r}
+all_genres
+```
+
+We define a function to find the mean across the population that has each genre as one of its listed genres, then apply that function for each genre.
+
+```{r}
+find_genre_mean <- function(x) {
+  tmp <- edx %>% mutate( gr = ifelse (genre1 == x | genre2 == x |
+                             genre3 == x | genre4 == x |
+                             genre5 == x | genre6 == x |
+                             genre7 == x | genre8 == x, x, NA) )
+  tmp %>% filter(! is.na(gr)) %>% group_by(gr) %>% summarize(mean_rt = mean(rating)) %>% .$mean_rt
+}
+
+gr <- sapply(all_genres, find_genre_mean)
+grd <- data.frame(genre=names(gr), mean_rt = gr, stringsAsFactors = FALSE)
+grd %>% arrange(genre) %>% grid.table()
+```
+
+
 
 ```{r, echo=FALSE}
 ###Do same data transformations to validation set
@@ -230,4 +254,25 @@ validation <- validation %>% separate(genres, into=genres,
                         sep="[|]", fill="right", remove=FALSE, extra="merge")
 
 ```
+
+## Modelling
+We will do a relatively simple prediction algorithm based on the mean of the ratings in the training set, and determine the accuracy of the algorithm by using Root Mean Square Error (RMSE):
+
+$$
+RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^n \left( y_i-y \right) ^2}
+$$
+
+where ${y_i}$ is the predicted value and ${y}$ is the true value ("rating" in the validation set). For ease of use we define the population mean *mu* and a function for the RMSE
+
+```{r}
+mu <- mean(edx$rating)
+
+RMSE <- function(x) {sqrt(mean((x - validation$rating)^2))}
+
+RMSE(mu)
+```
+
+If we predicted each movie to simply have the same rating, that being the population mean rating, our RMSE would be 1.061. We will now look at "biases" or "effects" that can be applied to the population mean to bring the prediction closer to the actual rating and hence reduce the RMSE.
+
+### Movie effect
 
