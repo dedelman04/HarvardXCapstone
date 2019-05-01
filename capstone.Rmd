@@ -14,6 +14,7 @@ if(!require(lubridate)) install.packages("lubridate", repos = "http://cran.us.r-
 if(!require(data.table)) install.packages("data.table", repos = "http://cran.us.r-project.org")
 if(!require(tidyverse)) install.packages("tidyverse", repos = "http://cran.us.r-project.org")
 if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.org")
+if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
 
 dl <- tempfile()
 download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
@@ -125,7 +126,7 @@ all_genres <- as.character(distinct(all_genres)$genre)
 edx <- edx %>% mutate_at(genres, ~as.character(.x))
 ```
 
-To get an idea of ratings distribution across the genres, we plot histograms for each of the values in genre1 (rounding the 1/2 star ratings down):
+To get an idea of ratings distribution across the genres, we plot histograms for each genre, using the rating of the first genre alphabetically (genre1) as a suitable approximation for the mean across all movies containing that genre. (rounding the 1/2 star ratings down):
 
 ```{r, warning=FALSE}
 edx %>% mutate(gp_rating = floor(rating)) %>%
@@ -145,7 +146,7 @@ edx <- edx %>%
   mutate(review_yr = year(as.Date(((edx$timestamp/60)/60)/24,
                                   origin="1970-1-1")))
 
-table(edx$review_yr) %>% as.data.frame() %>% arrange(desc(Freq))
+table(edx$review_yr) %>% as.data.frame() %>% arrange(desc(Freq)) %>% grid.table()
 ```
 
 As we see, all years have more than 100,000 ratings exccept for the first and last years of the range. Now lets look at the mean rating for each review year that is not 1995 or 2009. We plot as a line chart simply to make the trend more visible, and reverse the x-axis to show as the "age" of the review.
@@ -181,13 +182,14 @@ edx %>%
   geom_smooth(linetype = 2, se=FALSE)
 ```
 
-There appears to be a kind of trend where newer movies are rated lower and the mean rating increases until it peaks around 1950 then falls off again. But since the actual line looks more like a seismograph readout, with the mean bouncing all over the place, calling the deviations "trends" may be over-simplifying things. 
+There appears to be a kind of trend where newer movies are rated lower and the mean rating increases until it peaks around 1950 then falls off again. But since the actual line looks more like a seismograph readout (high variability year to year), with the mean bouncing all over the place, calling the deviations "trends" may be over-simplifying things. 
 
 #### "Nostalgia" Index
 Finally, we calculate a "nostalgia index", defined as the time between release of the movie and the individual review. The thinking is that older movies, even ones within the range of the review years, may be rated differently than more recent movies.
 
 ```{r}
-#Calculate years between movie release and review; negative numbers are assumed #to be data errors and will be set to 0
+#Calculate years between movie release and review; negative numbers are assumed
+#to be data errors and will be set to 0
 edx <- edx %>% mutate(nostalgia_idx = ifelse(review_yr < movie_yr, 
                                              0,
                                              review_yr - movie_yr))
@@ -223,9 +225,31 @@ find_genre_mean <- function(x) {
 
 gr <- sapply(all_genres, find_genre_mean)
 grd <- data.frame(genre=names(gr), mean_rt = gr, stringsAsFactors = FALSE)
-grd %>% arrange(genre) %>% grid.table()
+grd %>% arrange(genre) %>% grid.table(theme=ttheme_minimal(base_size = 8))
 ```
 
+We have seen previously the distribution of ratings for the various genres (see **Genres** section, above), but we want to visualize the mean rating per genre for each user. We will first gather together the list of all users and all genres for which they have given ratings. Then we plot the mean rating for that user and genre, then overlay the overall population mean for the genre.
+
+```{r}
+gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>% select(-genre1),
+            edx %>% filter(! is.na(genre2)) %>% 
+              select(userId, genre2, rating) %>% mutate(genre = genre2) %>% select(-genre2),
+            edx %>% filter(! is.na(genre3)) %>% 
+              select(userId, genre3, rating) %>% mutate(genre = genre3) %>% select(-genre3),
+            edx %>% filter(! is.na(genre4)) %>% 
+              select(userId, genre4, rating) %>% mutate(genre = genre4) %>% select(-genre4),
+            edx %>% filter(! is.na(genre5)) %>% 
+              select(userId, genre5, rating) %>% mutate(genre = genre5) %>% select(-genre5),
+            edx %>% filter(! is.na(genre6)) %>% 
+              select(userId, genre6, rating) %>% mutate(genre = genre6) %>% select(-genre6),
+            edx %>% filter(! is.na(genre7)) %>% 
+              select(userId, genre7, rating) %>% mutate(genre = genre7) %>% select(-genre7),
+            edx %>% filter(! is.na(genre8)) %>% 
+              select(userId, genre8, rating) %>% mutate(genre = genre8) %>% select(-genre8)
+)
+
+gu <- gu %>% group_by(userId, genre) %>% summarize(mean_rt = mean(rating))
+```
 
 
 ```{r, echo=FALSE}
@@ -245,9 +269,6 @@ validation <- validation %>%
 #Nostalgia Index
 validation <- validation %>% 
   mutate(nostalgia_idx = ifelse(review_yr < movie_yr, 0, review_yr - movie_yr))
-
-#Nostalgia factor
-validation <- validation %>% mutate(nostalgia_factor = cut(nostalgia_idx, cut_levels, labels=facs))
 
 #Genres
 validation <- validation %>% separate(genres, into=genres, 
@@ -271,8 +292,219 @@ RMSE <- function(x) {sqrt(mean((x - validation$rating)^2))}
 
 RMSE(mu)
 ```
+```{r, echo=FALSE}
+results <- data.frame(model = "Population Mean", RMSE = RMSE(mu))
+```
 
 If we predicted each movie to simply have the same rating, that being the population mean rating, our RMSE would be 1.061. We will now look at "biases" or "effects" that can be applied to the population mean to bring the prediction closer to the actual rating and hence reduce the RMSE.
 
+**NOTE**: When adding in "effects", we will confine the predicted rating to 0.0 thru 5.0, inclusively, since no rating outside of that range were available to the users.
+
 ### Movie effect
+An individual movie may be more or less popular than average, so the prediction for that movie should be effected by the overall popularity (or lack thereof) of a given movie. To calculate this "movie effect", we find, for each movie (represented by *movieId*) the mean, over all reviews, of the difference between each rating and the population mean.
+
+```{r}
+#Find the mean effect per movie
+movie <- edx %>% group_by(movieId) %>% summarize(bmov = mean(rating-mu))
+
+#Predict by adding the movie effect to the population mean
+pred <- validation %>% left_join(movie, by="movieId") %>%
+  mutate(pred = ifelse(bmov+mu > 5, 5, bmov+mu)) %>% .$pred
+
+RMSE(pred)
+```
+```{r, echo=FALSE}
+results <- rbind(results, data.frame(model = "Movie Effect", RMSE = RMSE(pred)))
+```
+
+We have reduced our RMSE considerably to 0.944.
+
+### User effect
+Like the movie effect, individual users may tend to give higher or lower reviews than average. We will look at the prediction algorithm with just a user effect, and then add the user effect to the movie effect algorithm above.
+
+```{r}
+#Find the mean effect per user
+user <- edx %>% group_by(userId) %>% summarize(buser = mean(rating-mu))
+
+#Predict by adding the user effect to the population mean
+pred <- validation %>% left_join(user, by="userId") %>% 
+  mutate(pred = ifelse(mu + buser > 5, 5, mu + buser)) %>% .$pred
+
+RMSE(pred)
+```
+```{r, echo=FALSE}
+results <- rbind(results, data.frame(model = "User Effect only", RMSE = RMSE(pred)))
+```
+```{r}
+#Predict by adding the user effect to the movie effect algorithm
+pred <- validation %>% left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>% mutate(pred = ifelse(mu + bmov + buser > 5, 5,
+                                                        mu + bmov + buser)) %>% .$pred
+
+RMSE(pred)
+```
+```{r, echo=FALSE}
+results <- rbind(results, data.frame(model = "Movie Effect + User Effect", RMSE = RMSE(pred)))
+```
+
+We see that user only (.978) was worse than movie only, but user effect added to the movie effect gave us another significant improvement to .885.
+
+### Dates
+From the exploratory analysis, it did not appear that the year of the movie's release (movie_yr) nor the year of the review (review_yr) will have a considerable effect on RMSE, due to the high variability across the population.  However, the nostalgia index (review_yr - movie_yr) had less variability, so we will see if has any significant effect on the prediction.
+
+```{r}
+nidx <- edx %>% group_by(nostalgia_idx) %>% summarize(bnost = mean(rating-mu))
+
+pred <- validation %>% 
+  left_join(nidx, by = "nostalgia_idx") %>%
+  mutate(pred = ifelse(mu + bnost > 5, 5,
+                       mu + bnost)) %>% .$pred
+
+RMSE(pred)
+```
+```{r, echo=FALSE}
+results <- rbind(results, data.frame(model = "Nostalgia Index Bias", RMSE = RMSE(pred)))
+```
+
+The RMSE for just the nostalgia index (1.052) is not significantly better than just using the population mean as a prediction (1.061), so we would not think that adding it to any other algorithm will show any significant improvement. However, to confirm, we will add it to the movie and user effects to see what it does.
+
+```{r}
+pred <- validation %>% 
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  left_join(nidx, by = "nostalgia_idx") %>%
+  mutate(pred = ifelse(mu + bmov + buser + bnost > 5, 5,
+                       mu + bmov + buser + bnost)) %>% .$pred
+
+RMSE(pred)
+```
+```{r, echo=FALSE}
+results <- rbind(results, data.frame(model = "Movie + User + Nostalgia", RMSE = RMSE(pred)))
+```
+
+The RMSE of 0.896 is worse than just movie plus user, so we will not use nostalgia index (or any other date-related field) in the final model.
+
+### Genre effect
+Since there are potentially multiple genres for a single movie, we can model the genre effect in two ways:
+
+* Total of the genre effects
+* Mean genre effect
+
+#### Total genre effect
+First we will need to put find the effect for each genre, then join that result into the validation set.
+
+```{r}
+find_genre_effect <- function(x) {
+  tmp <- edx %>% mutate( gr = ifelse (genre1 == x | genre2 == x |
+                                        genre3 == x | genre4 == x |
+                                        genre5 == x | genre6 == x |
+                                        genre7 == x | genre8 == x, x, NA) )
+  tmp %>% filter(! is.na(gr)) %>% group_by(gr) %>% summarize(bgen = mean(rating-mu)) %>% .$bgen
+}
+
+gre <- sapply(all_genres, find_genre_effect)
+gred <- data.frame(genre=names(gre), bgen = gre, stringsAsFactors = FALSE)
+```
+
+Since there are up to 8 genres per movie, we have to join the effects table 8 times. Each singular join looks like the following (the remaning 7 are done in the background):
+```{r}
+validation <- validation %>%
+  left_join(gred, by=c("genre1" = "genre")) %>%
+  mutate(bgen1 = bgen) %>% 
+  select(-bgen)
+```
+```{r, echo=FALSE}
+validation <- validation %>%
+  left_join(gred, by=c("genre2" = "genre")) %>%
+  mutate(bgen2 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(gred, by=c("genre3" = "genre")) %>%
+  mutate(bgen3 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(gred, by=c("genre4" = "genre")) %>%
+  mutate(bgen4 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(gred, by=c("genre5" = "genre")) %>%
+  mutate(bgen5 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(gred, by=c("genre6" = "genre")) %>%
+  mutate(bgen6 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(gred, by=c("genre7" = "genre")) %>%
+  mutate(bgen7 = bgen) %>% 
+  select(-bgen)
+
+validation <- validation %>%
+  left_join(gred, by=c("genre8" = "genre")) %>%
+  mutate(bgen8 = bgen) %>% 
+  select(-bgen)
+```
+
+We can now total all of the genre effects and add it to the movie and user effects to get a prediction.
+
+```{r}
+validation <- validation %>% 
+  mutate(total_bgen = ifelse(is.na(bgen1),0,bgen1)+
+           ifelse(is.na(bgen2),0,bgen2)+
+           ifelse(is.na(bgen3),0,bgen3)+
+           ifelse(is.na(bgen4),0,bgen4)+
+           ifelse(is.na(bgen5),0,bgen5)+
+           ifelse(is.na(bgen6),0,bgen6)+
+           ifelse(is.na(bgen7),0,bgen7)+
+           ifelse(is.na(bgen8),0,bgen8))
+
+pred <- validation %>%
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  mutate(pred = ifelse(mu + bmov + buser+total_bgen > 5, 5,
+                       mu + bmov + buser+total_bgen)) %>% .$pred
+
+RMSE(pred)
+```
+```{r, echo=FALSE}
+results <- rbind(results, data.frame(model = "Movie + User + Total Genre", RMSE = RMSE(pred)))
+```
+
+The RMSE adding in the total genre effect is worse than that of the movie and user alone, so we will not use that in the final model.
+
+#### Mean genre effect
+For the mean genre effect, instead of totalling the effects of the genres of a movie, we take the average of the effects of all the genres on a movie. We use an "unpivot" method to calculate the mean genre effect.
+
+```{r}
+mean_genre <- validation %>% select(movieId,
+                                    bgen1, bgen2, bgen3, bgen4,
+                                    bgen5, bgen6, bgen7, bgen8) %>%
+  gather(key=effect, value=genre_effect, -movieId)
+
+mean_genre <- mean_genre %>%
+  group_by(movieId) %>% summarize(mean_bgen = mean(genre_effect, na.rm=TRUE))
+
+pred <- validation %>%
+  left_join(movie, by="movieId") %>%
+  left_join(user, by="userId") %>%
+  left_join(mean_genre, by="movieId") %>%
+  mutate(pred = ifelse(mu + bmov + buser + mean_bgen > 5, 5,
+                       mu + bmov + buser + mean_bgen)) %>% .$pred
+
+RMSE(pred)
+```
+```{r, echo=FALSE}
+results <- rbind(results, data.frame(model = "Movie + User + Mean Genre", RMSE = RMSE(pred)))
+```
+
+The results for the mean genre effect (0.892) are better than that of the total genre effect (0.911), but both are still not as good as movie and user alone. Genre by itself will not be used in the final model.
+
+```{r}
+results %>% arrange(desc(RMSE)) %>% grid.table()
+```
 
