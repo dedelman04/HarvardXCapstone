@@ -612,8 +612,9 @@ In order to create an accurate recommender system for movies, it is best to use 
 Or mathematically
 
 $$
-y_i = µ + b_m_o_v_i_e + b_u_s_e_r_/_g_e_n_r_e
+y_i = µ + b_{movie} + b_{user/genre}
 $$
+
 
 We obtain an RMSE of 0.873 by this method. This is the best RMSE obtained by attempting several different models.
 
