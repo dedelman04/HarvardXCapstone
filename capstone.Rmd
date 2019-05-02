@@ -225,7 +225,7 @@ find_genre_mean <- function(x) {
 
 gr <- sapply(all_genres, find_genre_mean)
 grd <- data.frame(genre=names(gr), mean_rt = gr, stringsAsFactors = FALSE)
-grd %>% arrange(genre) %>% grid.table(theme=ttheme_minimal(base_size = 8))
+grd %>% arrange(genre) %>% grid.table(theme=ttheme_default(base_size = 8))
 ```
 
 We have seen previously the distribution of ratings for the various genres (see **Genres** section, above), but we want to visualize the mean rating per genre for each user. We will first gather together the list of all users and all genres for which they have given ratings. Then we plot the mean rating for that user and genre, then overlay the overall population mean for the genre.
@@ -251,6 +251,7 @@ gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>
 gu <- gu %>% group_by(userId, genre) %>% summarize(mean_rt = mean(rating))
 ```
 
+# STILL NEED STUFF HERE #
 
 ```{r, echo=FALSE}
 ###Do same data transformations to validation set
@@ -503,6 +504,118 @@ results <- rbind(results, data.frame(model = "Movie + User + Mean Genre", RMSE =
 ```
 
 The results for the mean genre effect (0.892) are better than that of the total genre effect (0.911), but both are still not as good as movie and user alone. Genre by itself will not be used in the final model.
+
+### Genre per User effect
+
+Using similar transformations while looking at just the genre effect, we will now look at the effect when faceting the genres of the movie by the user
+
+```{r}
+gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>% select(-genre1),
+            edx %>% filter(! is.na(genre2)) %>% 
+              select(userId, genre2, rating) %>% mutate(genre = genre2) %>% select(-genre2),
+            edx %>% filter(! is.na(genre3)) %>% 
+              select(userId, genre3, rating) %>% mutate(genre = genre3) %>% select(-genre3),
+            edx %>% filter(! is.na(genre4)) %>% 
+              select(userId, genre4, rating) %>% mutate(genre = genre4) %>% select(-genre4),
+            edx %>% filter(! is.na(genre5)) %>% 
+              select(userId, genre5, rating) %>% mutate(genre = genre5) %>% select(-genre5),
+            edx %>% filter(! is.na(genre6)) %>% 
+              select(userId, genre6, rating) %>% mutate(genre = genre6) %>% select(-genre6),
+            edx %>% filter(! is.na(genre7)) %>% 
+              select(userId, genre7, rating) %>% mutate(genre = genre7) %>% select(-genre7),
+            edx %>% filter(! is.na(genre8)) %>% 
+              select(userId, genre8, rating) %>% mutate(genre = genre8) %>% select(-genre8)
+)
+
+gue <- gu %>% group_by(userId, genre) %>% summarize(bgu = mean(rating-mu))
+```
+
+We join to each of the possible 8 genres for each review
+
+```{r}
+validation <- validation %>%
+  left_join(gue, by=c("userId", "genre1" = "genre")) %>%
+  mutate(bgu1 = bgu) %>% 
+  select(-bgu)
+
+validation <- validation %>%
+  left_join(gue, by=c("userId", "genre2" = "genre")) %>%
+  mutate(bgu2 = bgu) %>% 
+  select(-bgu)
+
+validation <- validation %>%
+  left_join(gue, by=c("userId", "genre3" = "genre")) %>%
+  mutate(bgu3 = bgu) %>% 
+  select(-bgu)
+
+validation <- validation %>%
+  left_join(gue, by=c("userId", "genre4" = "genre")) %>%
+  mutate(bgu4 = bgu) %>% 
+  select(-bgu)
+
+validation <- validation %>%
+  left_join(gue, by=c("userId", "genre5" = "genre")) %>%
+  mutate(bgu5 = bgu) %>% 
+  select(-bgu)
+
+validation <- validation %>%
+  left_join(gue, by=c("userId", "genre6" = "genre")) %>%
+  mutate(bgu6 = bgu) %>% 
+  select(-bgu)
+
+validation <- validation %>%
+  left_join(gue, by=c("userId", "genre7" = "genre")) %>%
+  mutate(bgu7 = bgu) %>% 
+  select(-bgu)
+
+validation <- validation %>%
+  left_join(gue, by=c("userId", "genre8" = "genre")) %>%
+  mutate(bgu8 = bgu) %>% 
+  select(-bgu)
+
+```
+
+We can then look at the user-genre effect by taking the mean user-genre effect for the review
+
+```{r}
+mean_gu <- validation %>% select(movieId, userId,
+                                    bgu1, bgu2, bgu3, bgu4,
+                                    bgu5, bgu6, bgu7, bgu8) %>%
+  gather(key=effect, value=gu_effect, -c(movieId, userId))
+
+mean_gu <- mean_gu %>%
+  group_by(movieId, userId) %>% 
+  summarize(mean_bgu = ifelse(is.na(mean(gu_effect, na.rm = TRUE)), 0, mean(gu_effect, na.rm=TRUE)))
+
+pred <- validation %>%
+  left_join(movie, by="movieId") %>%
+  left_join(mean_gu, by=c("movieId", "userId")) %>%
+  mutate(pred = ifelse(mu + bmov + mean_bgu > 5, 5,
+                       mu + bmov + mean_bgu)) %>% .$pred
+
+RMSE(pred)
+```
+```{r, echo=FALSE}
+results <- rbind(results, data.frame(model = "Movie + Mean User/Genre", RMSE = RMSE(pred)))
+```
+
+We see that this set of features significantly improved the RMSE (0.873) from the best we have seen so far (Movie + User effect, 0.885)
+
+## Conclusion
+
+In order to create an accurate recommender system for movies, it is best to use the
+
+* Population mean
+* Movie effect (how much does a rating for the movie, on average, deviate from the population?)
+* Mean user/genre effect (how much does a user's rating of a particular genre, averaged over all genres assign to a movie, deviate from the population mean?)
+
+Or mathematically
+
+$$
+y_i = µ + b_m_o_v_i_e + b_u_s_e_r_/_g_e_n_r_e
+$$
+
+We obtain an RMSE of 0.873 by this method. This is the best RMSE obtained by attempting several different models.
 
 ```{r}
 results %>% arrange(desc(RMSE)) %>% grid.table()

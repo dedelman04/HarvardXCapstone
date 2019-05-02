@@ -5,6 +5,35 @@ if(!require(caret)) install.packages("caret", repos = "http://cran.us.r-project.
 if(!require(gridExtra)) install.packages("gridExtra", repos = "http://cran.us.r-project.org")
 if(!require(qcc)) install.packages("qcc", repos = "http://cran.us.r-project.org")
 
+dl <- tempfile()
+download.file("http://files.grouplens.org/datasets/movielens/ml-10m.zip", dl)
+
+ratings <- read.table(text = gsub("::", "\t", readLines(unzip(dl, "ml-10M100K/ratings.dat"))),
+                      col.names = c("userId", "movieId", "rating", "timestamp"))
+
+movies <- str_split_fixed(readLines(unzip(dl, "ml-10M100K/movies.dat")), "\\::", 3)
+colnames(movies) <- c("movieId", "title", "genres")
+movies <- as.data.frame(movies) %>% mutate(movieId = as.numeric(levels(movieId))[movieId],
+                                           title = as.character(title),
+                                           genres = as.character(genres))
+movielens <- left_join(ratings, movies, by = "movieId")
+
+set.seed(1)
+test_index <- createDataPartition(y = movielens$rating, times = 1, p = 0.1, list = FALSE)
+edx <- movielens[-test_index,]
+temp <- movielens[test_index,]
+
+# Make sure userId and movieId in validation set are also in edx set
+validation <- temp %>% 
+  semi_join(edx, by = "movieId") %>%
+  semi_join(edx, by = "userId")
+
+# Add rows removed from validation set back into edx set
+removed <- anti_join(temp, validation)
+edx <- rbind(edx, removed)
+
+rm(dl, ratings, movies, test_index, temp, movielens, removed)
+
 #To reset if something messes up
 #edx_base <- edx
 #validation_base <- validation
@@ -24,6 +53,7 @@ mu <- mean(edx$rating)
 
 ###Seperate genres
 #Find the longest genre entry
+dim(table(edx$genres))
 g <- names(table(edx$genres))
 g[which.max(str_length(g))]
 
@@ -78,55 +108,62 @@ range(edx$movie_yr)
 
 #Plot movie year against mean rating, newer movies first
 edx %>% group_by(movie_yr) %>% summarize(mean_rt = mean(rating)) %>%
-  ggplot(aes(x=movie_yr, y=mean_rt))+geom_line()+scale_x_reverse()+geom_smooth(linetype = 2, se=FALSE)
+  ggplot(aes(x=movie_yr, y=mean_rt))+geom_line()+scale_x_reverse()+
+  geom_smooth(linetype = 2, se=FALSE)
 
-#Calculate years between movie release and review; negative numbers are assumed to be typos
-#and will be set to 0
+#Calculate "nostaliga index" - years between movie release and review;
+#negative numbers are assumed to be typos and will be set to 0
 edx <- edx %>% mutate(nostalgia_idx = ifelse(review_yr < movie_yr, 0, review_yr - movie_yr))
 
 edx %>% group_by(nostalgia_idx) %>% summarize(mean_rt = mean(rating)) %>% 
   ggplot(aes(x=nostalgia_idx, y=mean_rt))+geom_line()
 
-###The below were attempted but didn't do much
-#Pareto chart
-#nost <- edx %>% group_by(nostalgia_idx) %>% summarize(n=n()) %>% arrange(nostalgia_idx) %>% .$n
-#names(nost) <- distinct(data.frame(idx = edx$nostalgia_idx)) %>% arrange(idx) %>% .$idx
-#pareto.chart(nost, ylab="total ratings", cumperc=seq(0,100, by=5))
+#User+genre
+#Find genre mean to compare to user/genre means
+find_genre_mean <- function(x) {
+  tmp <- edx %>% mutate( gr = ifelse (genre1 == x | genre2 == x |
+                                        genre3 == x | genre4 == x |
+                                        genre5 == x | genre6 == x |
+                                        genre7 == x | genre8 == x, x, NA) )
+  tmp %>% filter(! is.na(gr)) %>% group_by(gr) %>% summarize(mean_rt = mean(rating)) %>% .$mean_rt
+}
 
-#Group nostalgia indices into nostalgia factors
-#facs <- c("0-10", "11-20", "21-30", "31-40", "41-50", "51-74", "75+")
-#cut_levels <- c(-0.5, 10.5, 20.5, 30.5, 40.5, 50.5, 74.5, 100)
-#facs <- c("0-20", "21-35", "36-60", "61+")
-#cut_levels <- c(-0.5, 20.5, 35.5, 60.5, 100)
-#edx <- edx %>% mutate(nostalgia_factor = cut(nostalgia_idx, cut_levels, labels=facs))
+gr <- sapply(all_genres, find_genre_mean)
+grd <- data.frame(genre=names(gr), mean_rt = gr, stringsAsFactors = FALSE)
 
-#edx %>% group_by(nostalgia_factor) %>% summarize(mean_rt = mean(rating)) %>% 
-#  ggplot(aes(x=nostalgia_factor, y=mean_rt))+geom_point()
+#Find user/genre pairs
+gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>% select(-genre1),
+            edx %>% filter(! is.na(genre2)) %>% 
+              select(userId, genre2, rating) %>% mutate(genre = genre2) %>% select(-genre2),
+            edx %>% filter(! is.na(genre3)) %>% 
+              select(userId, genre3, rating) %>% mutate(genre = genre3) %>% select(-genre3),
+            edx %>% filter(! is.na(genre4)) %>% 
+              select(userId, genre4, rating) %>% mutate(genre = genre4) %>% select(-genre4),
+            edx %>% filter(! is.na(genre5)) %>% 
+              select(userId, genre5, rating) %>% mutate(genre = genre5) %>% select(-genre5),
+            edx %>% filter(! is.na(genre6)) %>% 
+              select(userId, genre6, rating) %>% mutate(genre = genre6) %>% select(-genre6),
+            edx %>% filter(! is.na(genre7)) %>% 
+              select(userId, genre7, rating) %>% mutate(genre = genre7) %>% select(-genre7),
+            edx %>% filter(! is.na(genre8)) %>% 
+              select(userId, genre8, rating) %>% mutate(genre = genre8) %>% select(-genre8)
+)
 
-#edx %>% ggplot(aes(x=rating))+geom_histogram(bins=5)+facet_wrap(~ nostalgia_factor, scales="free_y")
+gu <- gu %>% group_by(userId, genre) %>% summarize(mean_rt = mean(rating))
+
+#User vs User/Genre plots
+gu %>% ggplot(aes(x=userId, y=mean_rt))+geom_point()+
+  geom_point(data = user, aes(x=userId, y=mu+buser), color="green")+
+  geom_hline(aes(yintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre)
+
+gu %>% ggplot(aes(x=mean_rt))+geom_histogram(binwidth=0.1)+
+  geom_vline(aes(xintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre, scales="free_y")
 
 
-###Look for users with little variance ( <= 1) in their ratings
+user %>% ggplot(aes(x=userId, y=buser+mu))+geom_point()+
+  geom_hline(aes(yintercept = mu), color = "red")
 
-#Only look at users with 10 or more ratings
-#keep_users <- edx %>% select(userId) %>% group_by(userId) %>% 
-#  summarize(n=n()) %>% filter(n >= 10) %>% .$userId
-
-#see the distibution of ratings ranges per user
-#edx %>% filter(userId %in% keep_users) %>% group_by(userId) %>%
-#  summarize(rt_min = min(rating), rt_max = max(rating)) %>% 
-#         group_by(rng = rt_max - rt_min) %>% summarize(n=n())
-
-#Note users whose ratings range is <= 1
-#lowvar_users <- edx %>% group_by(userId) %>%
-#  summarize(rng = max(rating) - min(rating)) %>% filter(rng <= 1) %>% .$userId
-
-#edx <- edx %>% filter(userId %in% keep_users) %>% filter(! userId %in% rem_lowvar_users )
-
-#validation %>% group_by(userId) %>% summarize(n=n()) %>% 
-#  anti_join(y = edx %>% group_by(userId) %>% summarize(n=n()), by="userId")
-#####
-
+user %>% ggplot(aes(x=buser+mu))+geom_histogram(binwidth=0.1)
 
 
 ###Do same data transformations to validation set
@@ -153,42 +190,52 @@ validation <- validation %>% mutate(nostalgia_factor = cut(nostalgia_idx, cut_le
 validation <- validation %>% separate(genres, into=genres, 
                         sep="[|]", fill="right", remove=FALSE, extra="merge")
 
-#validation <- validation %>% mutate_at(genres, ~as.factor(.x))
-#validation <- validation %>% mutate_at(genres, ~as.character(.x))
 
-## Modelling
+### Modelling
+## Naive population mean
 mu <- mean(edx$rating)
 
 RMSE <- function(x) {sqrt(mean((x - validation$rating)^2))}
 
 RMSE(mu)
 
-#Movie bias
+results <- data.frame(model = "Population Mean", RMSE = RMSE(mu))
+
+##Movie bias
+#Find the mean effect per movie
 movie <- edx %>% group_by(movieId) %>% summarize(bmov = mean(rating-mu))
 
-pred <- mu + validation %>% left_join(movie, by="movieId") %>% .$bmov
+#Predict by adding the movie effect to the population mean
+pred <- validation %>% left_join(movie, by="movieId") %>%
+  mutate(pred = ifelse(bmov+mu > 5, 5, bmov+mu)) %>% .$pred
 
 RMSE(pred)
 
-#sqrt(mean((pred - validation$rating)^2))
+results <- rbind(results, data.frame(model = "Movie Effect", RMSE = RMSE(pred)))
 
-#User bias
+##User bias
+#Find the mean effect per user
 user <- edx %>% group_by(userId) %>% summarize(buser = mean(rating-mu))
 
+#Predict by adding the user effect to the population mean
 pred <- validation %>% left_join(user, by="userId") %>% 
   mutate(pred = ifelse(mu + buser > 5, 5, mu + buser)) %>% .$pred
 
 RMSE(pred)
 
+results <- rbind(results, data.frame(model = "User Effect only", RMSE = RMSE(pred)))
+
+#Predict by adding the user effect to the movie effect algorithm
 pred <- validation %>% left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>% mutate(pred = ifelse(mu + bmov + buser > 5, 5,
                                                         mu + bmov + buser)) %>% .$pred
 
 RMSE(pred)
 
-#sqrt(mean((pred - validation$rating)^2))
+results <- rbind(results, data.frame(model = "Movie Effect + User Effect", RMSE = RMSE(pred)))
 
-#Movie Year bias
+
+##Movie Year bias - NOT PUT IN REPORT
 myear <- edx %>% group_by(movie_yr) %>% summarize(bmyear = mean(rating-mu))
 
 pred <- validation %>% 
@@ -207,7 +254,7 @@ pred <- validation %>%
 
 RMSE(pred)
 
-#Review Year bias
+##Review Year bias - NOT PUT IN REPORT
 ryear <- edx %>% group_by(review_yr) %>% summarize(bryear = mean(rating-mu))
 
 pred <- validation %>% 
@@ -226,7 +273,8 @@ pred <- validation %>%
 
 RMSE(pred)
 
-#Nostalgia index bias
+##Nostalgia index bias
+#Just nostalgia index
 nidx <- edx %>% group_by(nostalgia_idx) %>% summarize(bnost = mean(rating-mu))
 
 pred <- validation %>% 
@@ -236,6 +284,9 @@ pred <- validation %>%
 
 RMSE(pred)
 
+results <- rbind(results, data.frame(model = "Nostalgia Index Bias", RMSE = RMSE(pred)))
+
+#Movie + User + Nostalgia
 pred <- validation %>% 
   left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>%
@@ -245,7 +296,9 @@ pred <- validation %>%
 
 RMSE(pred)
 
-#all three??
+results <- rbind(results, data.frame(model = "Movie + User + Nostalgia", RMSE = RMSE(pred)))
+
+##all three?? - NOT PUT IN REPORT
 pred <- validation %>% 
   left_join(movie, by="movieId") %>%
   left_join(user, by="userId") %>%
@@ -260,17 +313,6 @@ RMSE(pred)
 #####Time effects make things worse!!#####
 
 ##Genres
-find_genre_mean <- function(x) {
-  tmp <- edx %>% mutate( gr = ifelse (genre1 == x | genre2 == x |
-                             genre3 == x | genre4 == x |
-                             genre5 == x | genre6 == x |
-                             genre7 == x | genre8 == x, x, NA) )
-  tmp %>% filter(! is.na(gr)) %>% group_by(gr) %>% summarize(mean_rt = mean(rating)) %>% .$mean_rt
-}
-
-gr <- sapply(all_genres, find_genre_mean)
-grd <- data.frame(genre=names(gr), mean_rt = gr, stringsAsFactors = FALSE)
-
 find_genre_effect <- function(x) {
   tmp <- edx %>% mutate( gr = ifelse (genre1 == x | genre2 == x |
                                         genre3 == x | genre4 == x |
@@ -281,8 +323,6 @@ find_genre_effect <- function(x) {
 
 gre <- sapply(all_genres, find_genre_effect)
 gred <- data.frame(genre=names(gre), bgen = gre, stringsAsFactors = FALSE)
-
-#validation <- validation %>% select(-c(bgen.x, bgen.y, bgen))
 
 validation <- validation %>%
   left_join(gred, by=c("genre1" = "genre")) %>%
@@ -324,6 +364,7 @@ validation <- validation %>%
   mutate(bgen8 = bgen) %>% 
   select(-bgen)
 
+#Total Genre effect
 validation <- validation %>% 
   mutate(total_bgen = ifelse(is.na(bgen1),0,bgen1)+
            ifelse(is.na(bgen2),0,bgen2)+
@@ -342,8 +383,9 @@ pred <- validation %>%
 
 RMSE(pred)
 
+results <- rbind(results, data.frame(model = "Movie + User + Total Genre", RMSE = RMSE(pred)))
 
-#mean genre by movie
+##Mean genre by movie
 mean_genre <- validation %>% select(movieId,
                                     bgen1, bgen2, bgen3, bgen4,
                                     bgen5, bgen6, bgen7, bgen8) %>%
@@ -361,8 +403,9 @@ pred <- validation %>%
 
 RMSE(pred)
 
+results <- rbind(results, data.frame(model = "Movie + User + Mean Genre", RMSE = RMSE(pred)))
 
-###User+genre effect
+##User+genre effect
 gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>% select(-genre1),
             edx %>% filter(! is.na(genre2)) %>% 
               select(userId, genre2, rating) %>% mutate(genre = genre2) %>% select(-genre2),
@@ -380,61 +423,50 @@ gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>
               select(userId, genre8, rating) %>% mutate(genre = genre8) %>% select(-genre8)
 )
 
-gu <- gu %>% group_by(userId, genre) %>% summarize(mean_rt = mean(rating))
+gue <- gu %>% group_by(userId, genre) %>% summarize(bgu = mean(rating-mu))
 
-gu %>% ggplot(aes(x=userId, y=mean_rt))+geom_point()+
-  geom_point(data = user, aes(x=userId, y=mu+buser), color="green")+
-  geom_hline(aes(yintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre)
-  
-gu %>% ggplot(aes(x=mean_rt))+geom_histogram(binwidth=0.1)+
-  geom_vline(aes(xintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre, scales="free_y")
-
-
-user %>% ggplot(aes(x=userId, y=buser+mu))+geom_point()+
-  geom_hline(aes(yintercept = mu), color = "red")
-
-user %>% ggplot(aes(x=buser+mu))+geom_histogram(binwidth=0.1)
 
 validation <- validation %>%
-  left_join(gu, by=c("userId", "genre1" = "genre")) %>%
-  mutate(bgu1 = mean_rt) %>% 
-  select(-mean_rt)
+  left_join(gue, by=c("userId", "genre1" = "genre")) %>%
+  mutate(bgu1 = bgu) %>% 
+  select(-bgu)
 
 validation <- validation %>%
-  left_join(gu, by=c("userId", "genre2" = "genre")) %>%
-  mutate(bgu2 = mean_rt) %>% 
-  select(-mean_rt)
+  left_join(gue, by=c("userId", "genre2" = "genre")) %>%
+  mutate(bgu2 = bgu) %>% 
+  select(-bgu)
 
 validation <- validation %>%
-  left_join(gu, by=c("userId", "genre3" = "genre")) %>%
-  mutate(bgu3 = mean_rt) %>% 
-  select(-mean_rt)
+  left_join(gue, by=c("userId", "genre3" = "genre")) %>%
+  mutate(bgu3 = bgu) %>% 
+  select(-bgu)
 
 validation <- validation %>%
-  left_join(gu, by=c("userId", "genre4" = "genre")) %>%
-  mutate(bgu4 = mean_rt) %>% 
-  select(-mean_rt)
+  left_join(gue, by=c("userId", "genre4" = "genre")) %>%
+  mutate(bgu4 = bgu) %>% 
+  select(-bgu)
 
 validation <- validation %>%
-  left_join(gu, by=c("userId", "genre5" = "genre")) %>%
-  mutate(bgu5 = mean_rt) %>% 
-  select(-mean_rt)
+  left_join(gue, by=c("userId", "genre5" = "genre")) %>%
+  mutate(bgu5 = bgu) %>% 
+  select(-bgu)
 
 validation <- validation %>%
-  left_join(gu, by=c("userId", "genre6" = "genre")) %>%
-  mutate(bgu6 = mean_rt) %>% 
-  select(-mean_rt)
+  left_join(gue, by=c("userId", "genre6" = "genre")) %>%
+  mutate(bgu6 = bgu) %>% 
+  select(-bgu)
 
 validation <- validation %>%
-  left_join(gu, by=c("userId", "genre7" = "genre")) %>%
-  mutate(bgu7 = mean_rt) %>% 
-  select(-mean_rt)
+  left_join(gue, by=c("userId", "genre7" = "genre")) %>%
+  mutate(bgu7 = bgu) %>% 
+  select(-bgu)
 
 validation <- validation %>%
-  left_join(gu, by=c("userId", "genre8" = "genre")) %>%
-  mutate(bgu8 = mean_rt) %>% 
-  select(-mean_rt)
+  left_join(gue, by=c("userId", "genre8" = "genre")) %>%
+  mutate(bgu8 = bgu) %>% 
+  select(-bgu)
 
+#Total bgu - NOT PUT IN REPORT
 validation <- validation %>% 
   mutate(total_bgu = ifelse(is.na(bgu1),0,bgu1)+
            ifelse(is.na(bgu2),0,bgu2)+
@@ -452,9 +484,10 @@ pred <- validation %>%
 
 RMSE(pred)
 
+#Mean BGU
 mean_gu <- validation %>% select(movieId, userId,
-                                    bgu1, bgu2, bgu3, bgu4,
-                                    bgu5, bgu6, bgu7, bgu8) %>%
+                                 bgu1, bgu2, bgu3, bgu4,
+                                 bgu5, bgu6, bgu7, bgu8) %>%
   gather(key=effect, value=gu_effect, -c(movieId, userId))
 
 mean_gu <- mean_gu %>%
@@ -468,3 +501,18 @@ pred <- validation %>%
                        mu + bmov + mean_bgu)) %>% .$pred
 
 RMSE(pred)
+
+results <- rbind(results, data.frame(model = "Movie + Mean User/Genre", RMSE = RMSE(pred)))
+
+##Output the predicted ratings
+validation <- validation %>% 
+  select(-rating) %>% 
+  left_join(movie, by="movieId") %>%
+  left_join(mean_gu, by=c("movieId", "userId")) %>%
+  mutate(pred = ifelse(mu + bmov + mean_bgu > 5, 5,
+                       mu + bmov + mean_bgu)) %>%
+  select(userId, movieId, timestamp, title, genres, pred)
+
+# Ratings will go into the CSV submission file below:
+write.csv(validation,
+          "submission.csv", na = "", row.names=FALSE)
