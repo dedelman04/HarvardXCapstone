@@ -151,19 +151,22 @@ gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>
 
 gu <- gu %>% group_by(userId, genre) %>% summarize(mean_rt = mean(rating))
 
-#User vs User/Genre plots
-gu %>% ggplot(aes(x=userId, y=mean_rt))+geom_point()+
-  geom_point(data = user, aes(x=userId, y=mu+buser), color="green")+
+#Plot mean rating vs userId, overlay genre mean
+gu %>% ggplot(aes(x=userId, y=mean_rt))+geom_point(alpha=0.01)+
+  geom_point(data = top10_gu,
+             aes(x=userId, y=mean_rt), color="green")+
   geom_hline(aes(yintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre)
 
-gu %>% ggplot(aes(x=mean_rt))+geom_histogram(binwidth=0.1)+
-  geom_vline(aes(xintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre, scales="free_y")
+#Genre vs User/Genre plots
+#Look at user+genre for users with most reviews (top 100)
+top10_users <- edx %>% group_by(userId) %>% summarize(n=n()) %>% top_n(100, n)
+top10_gu <- gu %>% inner_join(top10_users, by="userId")
 
-
-user %>% ggplot(aes(x=userId, y=buser+mu))+geom_point()+
-  geom_hline(aes(yintercept = mu), color = "red")
-
-user %>% ggplot(aes(x=buser+mu))+geom_histogram(binwidth=0.1)
+#Plot mean rating (black), genre mean (red), user/genre mean (green)
+gu %>% ggplot(aes(x=userId, y=mean_rt))+geom_point(alpha=0.01)+
+  geom_point(data = top10_gu,
+             aes(x=userId, y=mean_rt), color="green")+
+  geom_hline(aes(yintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre)
 
 
 ###Do same data transformations to validation set

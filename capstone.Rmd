@@ -1,8 +1,10 @@
 ---
 title: "Movie Recommender - HarvardX Capstone"
 author: "David Edelman"
-date: "4/22/2019"
-output: html_document
+date: "5/3/2019"
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
@@ -52,10 +54,10 @@ rm(dl, ratings, movies, test_index, temp, movielens, removed)
 ## Executive Summary
 People are always wanting to know if they should see a certain movie, whether it is new in the theaters, or an older movie available on other media. However, individual tastes widely vary when it comes to enjoyment of movies. Movie reviews and ratings often inform this decision, so by using a vast accumulation of movie reviews from individuals, we can create a algorithm to predict how a certain individual would rate the movie, and hence their level of enjoyment.
 
-We will take almost 10 million movie reviews from individuals that logged movie review on the site MovieLens (<http://movielens.org>), explore the data to see what insights we can glean from it, and using those insights construct a prediction algorithm. We will test the predictive power against a validation set of 1 million records by using the Root Mean Square Error (RMSE) metric.
+We will take almost 10 million movie reviews from individuals that logged a movie review on the site MovieLens (<http://movielens.org>), explore the data to see what insights we can glean from it, and using those insights construct a prediction algorithm. We will test the predictive power against a validation set of 1 million records by using the Root Mean Square Error (RMSE) metric.
 
 ## Data Exploration and Wrangling
-The data set we are using is relatively simple. There are 5 predictors along with the "rating" dependant variable:
+The data set we are using is relatively simple. There are 5 predictors along with the "rating" dependent variable:
 
 * userId - an integer identifier for each unique user; the value has no inherent meaning
 * movieId - an integer identifier for each unique movie; the value has no inherent meaning
@@ -65,20 +67,20 @@ The data set we are using is relatively simple. There are 5 predictors along wit
 * rating - the dependent variable; a set of numbers from 0.5 to 5, incrementing by 0.5
 
 ### Ratings
-```{r, echo=FALSE, warning=FALSE}
+```{r, warning=FALSE}
 edx %>% ggplot(aes(x=rating))+geom_histogram(stat="count")
 ```
 
 A distribution of the number of reviews per rating shows that most ratings are 4 stars, followed by 3 stars. The "1/2 star" ratings are uncommon, so for the purposes of looking at a distribution, we will round the 1/2 stars ratings down.
 
-```{r, echo=FALSE, warning=FALSE}
+```{r, warning=FALSE}
 edx %>% mutate(gp_rating = floor(rating)) %>%
   ggplot(aes(x=gp_rating))+geom_histogram(stat="count")+
   xlab("rating")
 
 ```
 
-The distribution appears approximately normal with a negative skew. The mean rating *mu* is 3.51. Since the distribution is not continuous, median and standard deviation are not very meaningful.
+The distribution appears approximately normal with a negative skew. The mean rating __*mu*__ is 3.51. Since the distribution is not continuous, median and standard deviation are not very meaningful.
 
 ### Genres
 
@@ -133,12 +135,12 @@ edx %>% mutate(gp_rating = floor(rating)) %>%
   ggplot(aes(x=gp_rating))+geom_histogram(stat="count")+facet_wrap(~genre1, scales="free_y")
 ```
 
-Just about all of the genres show a distribution heavily skewed towards the 3, 3.5, 4, and 4.5, so we may not see much benefit to this feature by itself in the prediction algorithm. However, there may be ways to use it in combination with other features.
+Just about all of the genres show a vast majority of ratings are 3 thru 4.5, so we may not see much benefit to this feature by itself in the prediction algorithm. However, there may be ways to use it in combination with other features.
 
 ### Dates
 #### Year of Review/Rating
 
-The year in which the user created the review may be of use for exploration and prediction. We can use the "timestamp" variable to extract a year. Since "timestamp" represents the number of seconds elapsed since 1 Jan 1970, we will convert to a date and extract the year.
+The year in which the user created the review may be of use for exploration and prediction. We can use the "timestamp" variable to extract a year. For this data set, "timestamp" represents the number of seconds elapsed since 1 Jan 1970, so we will convert to a date and extract the year.
 
 ```{r}
 #Add review year
@@ -203,10 +205,10 @@ edx %>% group_by(nostalgia_idx) %>% summarize(mean_rt = mean(rating)) %>%
   ggplot(aes(x=nostalgia_idx, y=mean_rt))+geom_line()
 ```
 
-The curve looks similar to the movie year, with less overall variation year to year. This may be a good candidate to represent the age of a movie in the prediction algorithm.
+The curve looks similar to the movie year, although with less overall variation year to year. This may be a good candidate to represent the age of a movie in the prediction algorithm.
 
 ### User and Genre
-We have split the single "genres" column into its constituent genres (genre1 thru genre8), and looked at a sample distribution, but we should explore further and look at the mean rating per genre, for every movie that is assigned to that genre. Because the genres are listed alphabetically, and not in some order indicating that a movie is more, for example, "Comedy" than it is "Horror", we need to comb through all of the movies and find which have been assigned to each genre. We previously stored the list of genres in all_genres:
+We have split the single "genres" column into its constituent genres (genre1 thru genre8), and looked at a sample distribution, but we should explore further and look at the mean rating per genre, for every movie that is assigned to that genre. The genres are listed alphabetically, and not in some order indicating that a movie is more, for example, "Comedy" than it is "Horror"; because of this we need to comb through all of the movies and find which have been assigned to each genre. We previously stored the list of genres in *all_genres*:
 
 ```{r}
 all_genres
@@ -228,7 +230,7 @@ grd <- data.frame(genre=names(gr), mean_rt = gr, stringsAsFactors = FALSE)
 grd %>% arrange(genre) %>% grid.table(theme=ttheme_default(base_size = 8))
 ```
 
-We have seen previously the distribution of ratings for the various genres (see **Genres** section, above), but we want to visualize the mean rating per genre for each user. We will first gather together the list of all users and all genres for which they have given ratings. Then we plot the mean rating for that user and genre, then overlay the overall population mean for the genre.
+We have previously seen the distribution of ratings for the various genres (see **Genres** section, above), but we want to visualize the mean rating per genre *for each user*. We will first gather together the list of all users and all genres for which they have given ratings.
 
 ```{r}
 gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>% select(-genre1),
@@ -251,10 +253,32 @@ gu <- rbind(edx %>% select(userId, genre1, rating) %>% mutate(genre = genre1) %>
 gu <- gu %>% group_by(userId, genre) %>% summarize(mean_rt = mean(rating))
 ```
 
-# STILL NEED STUFF HERE #
+We plot the mean rating per genre against the user ID using a scatter plot (even though the user ID itself is meaningless), and overlay the overall genre mean (red line). 
+
+```{r}
+gu %>% ggplot(aes(x=userId, y=mean_rt))+geom_point(alpha=0.01)+
+  geom_hline(aes(yintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre)+
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())
+```
+
+From this we can infer from the density of the points a distribution that is relatively normal if left-skewed (as we saw with the histograms above). To see if the genre effect per user may be significant, we select the top 100 users by number of reviews, and overlay their individual genre average (green) over the entire population.
+
+```{r}
+#Look at user+genre for users with most reviews (top 100)
+top10_users <- edx %>% group_by(userId) %>% summarize(n=n()) %>% top_n(100, n)
+top10_gu <- gu %>% inner_join(top10_users, by="userId")
+
+gu %>% ggplot(aes(x=userId, y=mean_rt))+geom_point(alpha=0.01)+
+  geom_point(data = top10_gu,
+             aes(x=userId, y=mean_rt), color="green")+
+  geom_hline(aes(yintercept = mean_rt), data=grd, color = "red")+facet_wrap(~genre)+
+  theme(axis.text.x=element_blank(), axis.ticks.x=element_blank())
+```
+
+The distribution of the top 100 users shows a good bit of variation, so this is a promising candidate to use in the predictive model.
 
 ```{r, echo=FALSE}
-###Do same data transformations to validation set
+###Before we can do modelling, we must do the same data transformations to validation set
 #Review Year
 validation <- validation %>% 
   mutate(review_yr = year(as.Date(((validation$timestamp/60)/60)/24, origin="1970-1-1")))
@@ -284,7 +308,7 @@ $$
 RMSE = \sqrt{\frac{1}{n} \sum_{i=1}^n \left( y_i-y \right) ^2}
 $$
 
-where ${y_i}$ is the predicted value and ${y}$ is the true value ("rating" in the validation set). For ease of use we define the population mean *mu* and a function for the RMSE
+where ${y_i}$ is the predicted value and ${y}$ is the true value ("rating" in the validation set). For ease of use we define the population mean __µ__ (mu) and a function for the RMSE
 
 ```{r}
 mu <- mean(edx$rating)
@@ -299,7 +323,7 @@ results <- data.frame(model = "Population Mean", RMSE = RMSE(mu))
 
 If we predicted each movie to simply have the same rating, that being the population mean rating, our RMSE would be 1.061. We will now look at "biases" or "effects" that can be applied to the population mean to bring the prediction closer to the actual rating and hence reduce the RMSE.
 
-**NOTE**: When adding in "effects", we will confine the predicted rating to 0.0 thru 5.0, inclusively, since no rating outside of that range were available to the users.
+**NOTE**: When adding in "effects", we will confine the predicted rating to 0.0 thru 5.0, inclusively, since no ratings outside of that range were available to the users.
 
 ### Movie effect
 An individual movie may be more or less popular than average, so the prediction for that movie should be effected by the overall popularity (or lack thereof) of a given movie. To calculate this "movie effect", we find, for each movie (represented by *movieId*) the mean, over all reviews, of the difference between each rating and the population mean.
@@ -392,7 +416,7 @@ Since there are potentially multiple genres for a single movie, we can model the
 * Mean genre effect
 
 #### Total genre effect
-First we will need to put find the effect for each genre, then join that result into the validation set.
+First we will need to find the effect for each genre, then join that result into the validation set.
 
 ```{r}
 find_genre_effect <- function(x) {
@@ -606,8 +630,8 @@ We see that this set of features significantly improved the RMSE (0.873) from th
 In order to create an accurate recommender system for movies, it is best to use the
 
 * Population mean
-* Movie effect (how much does a rating for the movie, on average, deviate from the population?)
-* Mean user/genre effect (how much does a user's rating of a particular genre, averaged over all genres assign to a movie, deviate from the population mean?)
+* Movie effect (how much does a rating for a specific movie, on average, deviate from the population mean?)
+* Mean user/genre effect (how much does a user's rating of a particular genre, averaged over all genres assigned to a movie, deviate from the population mean?)
 
 Or mathematically
 
@@ -616,9 +640,9 @@ y_i = µ + b_{movie} + b_{user/genre}
 $$
 
 
-We obtain an RMSE of 0.873 by this method. This is the best RMSE obtained by attempting several different models.
+We obtain an RMSE of **0.873** by this method. This is the best RMSE obtained by attempting several different models.
 
 ```{r}
-results %>% arrange(desc(RMSE)) %>% grid.table()
+results %>% arrange(RMSE) %>% grid.table()
 ```
 
